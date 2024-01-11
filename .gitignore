@@ -4,3 +4,11 @@ __pycache__/
 *.pyc
 *.egg-info/
 kdd24/_version.py
+
+# All shell scripts
+*.sh
+
+# Custom
+.vscode/
+nohup.out
+sandbox/

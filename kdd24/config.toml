@@ -1,0 +1,2 @@
+features = ["lat", "lon"]
+root_dir = "/opt/kdd24"
