@@ -2,7 +2,20 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from joblib import Parallel, delayed, dump, load
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import (
+    RBF,
+    WhiteKernel,
+    ConstantKernel,
+    Matern,
+    RationalQuadratic,
+    ExpSineSquared,
+    DotProduct,
+    PairwiseKernel,
+    Product,
+    Sum,
+    Exponentiation,
+)
 
 
 def fit(train_data, config):
@@ -18,17 +31,26 @@ def predict(test_data, config):
 
 
 def fit_predict(train_data, test_data, config):
+    train_X = train_data.isel(datetime=0).to_dataframe().reset_index()[config["features"]]
+    lat_min = train_X["lat"].min()
+    lat_max = train_X["lat"].max()
+    lon_min = train_X["lon"].min()
+    lon_max = train_X["lon"].max()
+
     test_X = test_data.isel(datetime=0).to_dataframe().reset_index()[config["features"]]
+    test_X["lat"] = (test_X["lat"] - lat_min) / (lat_max - lat_min)
+    test_X["lon"] = (test_X["lon"] - lon_min) / (lon_max - lon_min)
 
     def train_fn(ts):
         train_df = train_data.sel(datetime=ts).to_dataframe()
+        train_df["lat"] = (train_df["lat"] - lat_min) / (lat_max - lat_min)
+        train_df["lon"] = (train_df["lon"] - lon_min) / (lon_max - lon_min)
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
-        model = RandomForestRegressor(
-            n_estimators=config["n_estimators"],
-            n_jobs=1,
-            random_state=config["random_state"],
-            max_depth=config["max_depth"],
+        kernel = ConstantKernel(1.0) * Matern(length_scale=[1.1, 0.9], nu=1.5)  # + WhiteKernel(noise_level=0.1)
+
+        model = GaussianProcessRegressor(
+            kernel=kernel, alpha=0.1, random_state=0, normalize_y=True, n_restarts_optimizer=10
         )
         model.fit(train_df[config["features"]], train_df["value"])
         pred_y = model.predict(test_X)

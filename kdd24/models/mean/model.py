@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from joblib import Parallel, delayed, dump, load
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.dummy import DummyRegressor
 
 
 def fit(train_data, config):
@@ -24,12 +24,7 @@ def fit_predict(train_data, test_data, config):
         train_df = train_data.sel(datetime=ts).to_dataframe()
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
-        model = RandomForestRegressor(
-            n_estimators=config["n_estimators"],
-            n_jobs=1,
-            random_state=config["random_state"],
-            max_depth=config["max_depth"],
-        )
+        model = DummyRegressor(strategy="mean")
         model.fit(train_df[config["features"]], train_df["value"])
         pred_y = model.predict(test_X)
         return pred_y

@@ -9,7 +9,8 @@ from time import time
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, required=True, help="model name")
 parser.add_argument("--dataset", type=str, required=True, help="dataset name")
-parser.add_argument("--config", type=str, required=True, help="config file name without .toml extension")
+parser.add_argument("--common_config", type=str, required=True, help="common config file name without .toml extension")
+parser.add_argument("--model_config", type=str, required=True, help="config file name without .toml extension")
 parser.add_argument("--fold", type=int, required=True, help="fold number")
 parser.add_argument(
     "--mode",
@@ -25,17 +26,18 @@ parser.add_argument(
 parser.add_argument("--gpu", type=int, required=False, help="Physical GPU ID")
 # take mode argument for train, test. Provide choices
 args = parser.parse_args()
-print(args, type(args))
 
 # load configs
-common_config = toml.load("kdd24/config.toml")
-config = toml.load(f"kdd24/models/{args.model}/{args.config}.toml")
-config = {**common_config, **config, **vars(args)}
-print(config)
+common_config = toml.load(f"kdd24/{args.common_config}.toml")
+model_config = toml.load(f"kdd24/models/{args.model}/{args.model_config}.toml")
+config = {**common_config, **model_config, **vars(args)}
 
 # set additional configs manually
-config["working_dir"] = join(config["root_dir"], f"models/{args.model}/{args.dataset}/{args.config}/fold_{args.fold}")
+config["working_dir"] = join(
+    config["root_dir"], f"models/{args.common_config}/{args.model}/{args.dataset}/{args.model_config}/fold_{args.fold}"
+)
 os.makedirs(config["working_dir"], exist_ok=True)
+print(config)
 
 # main program
 if args.mode == "fit":

@@ -5,13 +5,14 @@
 ## Experiments
  
 ```py
-python main.py --model <model_name> --config <config_name> --dataset <dataset_name> --fold <fold_number> --mode <mode>
+python main.py --common_config <common_config_name> --model <model_name> --model_config <config_name> --dataset <dataset_name> --fold <fold_number> --mode <mode>
 ```
 
 | Argument | Options | Description |
 | --- | --- | --- |
+| common_config | config1, ... | Common config to use. It contains details like features to use.|
 | model | rf, ... | Model to use |
-| config | config1, ... | Config to use |
+| model_config | config1, ... | Model configuration to use |
 | dataset | pa_lov, ... | Dataset to use |
 | fold | 0, 1, ... | Fold number |
 | mode | fit, predict, fit_predict | Fit, predict or fit and predict together |
@@ -20,7 +21,7 @@ python main.py --model <model_name> --config <config_name> --dataset <dataset_na
 Example:
 
 ```py
-python main.py --model rf --config config1 --dataset pa_lov --fold 0 --mode fit_predict
+python main.py --common_config config1 --model rf --model_config config1 --dataset pa_lov --fold 0 --mode fit_predict
 ```
 
 One can define such commands in a shell script and run them in parallel. For example,
