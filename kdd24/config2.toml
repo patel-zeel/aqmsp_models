@@ -1,2 +1,3 @@
 features = ["lat", "lon", "t2m"]
 root_dir = "/opt/kdd24"
+dummy = true
