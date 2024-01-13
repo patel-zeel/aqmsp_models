@@ -1,19 +1,19 @@
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from joblib import Parallel, delayed, dump, load
+from joblib import Parallel, delayed
 from sklearn.svm import SVR
 
 
 def fit(train_data, config):
     raise NotImplementedError(
-        "'fit' mode is not implemented for 'rf' model. Please use 'fit-predict' mode instead."
+        "'fit' mode is not implemented for 'rf' model. Please use 'fit_predict' mode instead."
     )  # Not saving the models because they consume too much space i.e. 13 GB for single fold and a year of data.
 
 
-def predict(test_data, config):
+def predict(test_data, train_data, config):
     raise NotImplementedError(
-        "'predict' mode is not implemented for 'rf' model. Please use 'fit-predict' mode instead."
+        "'predict' mode is not implemented for 'rf' model. Please use 'fit_predict' mode instead."
     )  # Models are not saved so can not be loaded directly in the predict mode.
 
 

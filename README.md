@@ -85,7 +85,7 @@ main.py             # for running experiments
 def fit(train_data, config):
     # Fit and save model and auxillary information
 
-def predict(test_data, config):
+def predict(test_data, train_data, config):
     # Predict and save predictions
 
 def fit_predict(train_data, test_data, config):

@@ -26,6 +26,7 @@ parser.add_argument(
 parser.add_argument("--gpu", type=int, required=False, help="Physical GPU ID")
 # take mode argument for train, test. Provide choices
 args = parser.parse_args()
+os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
 # load configs
 common_config = toml.load(f"kdd24/{args.common_config}.toml")
@@ -58,12 +59,14 @@ elif args.mode == "predict":
     init_time = time()
 
     # load data
+    load_train = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_train
     load_test = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_test
+    train_data = load_train(config)
     test_data = load_test(config)
 
     # predict
     predict = importlib.import_module(f"kdd24.models.{args.model}.model").predict
-    predict(test_data, config)
+    predict(test_data, train_data, config)
 
     test_time = time() - init_time
     print(f"Testing time: {test_time/60:.2f} minutes")

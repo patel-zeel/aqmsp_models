@@ -1,6 +1,7 @@
 from os.path import join
 import argparse
 import toml
+import pandas as pd
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
@@ -19,11 +20,12 @@ config = {**config, **vars(args)}
 models = args.model.split(",")
 
 plt.figure(figsize=(10, 5))
+res_dict = {}
 for model in models:
     config["working_dir"] = join(
         config["root_dir"], f"models/{args.common_config}/{model}/{args.dataset}/{args.model_config}"
     )
-    print(config)
+    # print(config)
 
     preds_list = []
     for fold in range(args.n_folds):
@@ -32,6 +34,8 @@ for model in models:
         preds_list.append(preds)
 
     error = np.abs(preds["pred"] - preds["value"])
+    nonnull_idx = ~np.isnan(error.values)
+    res_dict[model] = error.values[nonnull_idx].mean()
     error = error.resample(datetime="1W").mean().mean(dim="location_id")
     plt.plot(error["datetime"], error, label=f"{model}")
 
@@ -45,3 +49,5 @@ plt.legend()
 save_path = join("/tmp/mae.pdf")
 plt.savefig(save_path)
 print(f"Saved to {save_path}")
+
+print(pd.Series(res_dict).sort_values().to_markdown())
