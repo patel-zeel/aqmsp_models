@@ -5,7 +5,7 @@
 ## Experiments
  
 ```py
-python main.py --common_config <common_config_name> --model <model_name> --model_config <config_name> --dataset <dataset_name> --fold <fold_number> --mode <mode>
+python main.py --common_config <common_config_name> --model <model_name> --model_config <config_name> --dataset <dataset_name> --fold <fold_number> --mode <mode> --gpu <physical_gpu_id>
 ```
 
 | Argument | Options | Description |
@@ -16,7 +16,7 @@ python main.py --common_config <common_config_name> --model <model_name> --model
 | dataset | pa_lov, ... | Dataset to use |
 | fold | 0, 1, ... | Fold number |
 | mode | fit, predict, fit_predict | Fit, predict or fit and predict together |
-| gpu | 0, 1, ... | Physical GPU ID |
+| gpu | 0, 1, ... | Physical GPU ID (Optional)|
 
 
 Example:
