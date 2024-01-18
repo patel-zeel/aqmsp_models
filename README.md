@@ -5,7 +5,7 @@
 ## Experiments
  
 ```py
-python main.py --common_config <common_config_name> --model <model_name> --model_config <config_name> --dataset <dataset_name> --fold <fold_number> --mode <mode>
+python main.py --common_config <common_config_name> --model <model_name> --model_config <config_name> --dataset <dataset_name> --fold <fold_number> --mode <mode> --gpu <physical_gpu_id>
 ```
 
 | Argument | Options | Description |
@@ -16,6 +16,7 @@ python main.py --common_config <common_config_name> --model <model_name> --model
 | dataset | pa_lov, ... | Dataset to use |
 | fold | 0, 1, ... | Fold number |
 | mode | fit, predict, fit_predict | Fit, predict or fit and predict together |
+| gpu | 0, 1, ... | Physical GPU ID (Optional)|
 
 
 Example:
@@ -30,11 +31,11 @@ One can define such commands in a shell script and run them in parallel. For exa
 # measure time
 start=`date +%s`
 
-python main.py --model rf --dataset pa_lov --config config1 --mode fit_predict --fold 0
-python main.py --model rf --dataset pa_lov --config config1 --mode fit_predict --fold 1
-python main.py --model rf --dataset pa_lov --config config1 --mode fit_predict --fold 2
-python main.py --model rf --dataset pa_lov --config config1 --mode fit_predict --fold 3
-python main.py --model rf --dataset pa_lov --config config1 --mode fit_predict --fold 4
+python main.py --model rf --dataset pa_lov --common_config config1 --model_config config2 --mode fit_predict --fold 0
+python main.py --model rf --dataset pa_lov --common_config config1 --model_config config2 --mode fit_predict --fold 1
+python main.py --model rf --dataset pa_lov --common_config config1 --model_config config2 --mode fit_predict --fold 2
+python main.py --model rf --dataset pa_lov --common_config config1 --model_config config2 --mode fit_predict --fold 3
+python main.py --model rf --dataset pa_lov --common_config config1 --model_config config2 --mode fit_predict --fold 4
 
 # measure time
 end=`date +%s`
