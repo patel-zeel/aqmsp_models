@@ -6,77 +6,31 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from astra.torch.models import MLPRegressor, SIRENRegressor
+
 from joblib import Parallel, delayed
 
 
-class Encoder(nn.Module):
+class DeepTime(nn.Module):
     def __init__(self, x_dim, y_dim, hidden_dims, repr_dim, dropout):
         super().__init__()
-        self.dropout = dropout
+        self.mlp = SIRENRegressor(x_dim, hidden_dims, repr_dim, dropout=dropout)
+        self.log_noise_var = nn.Parameter(torch.tensor(np.log(0.01)))
 
-        self.input = nn.Linear(x_dim + y_dim, hidden_dims[0])
+    def forward(self, x_context, y_context, valid_idx, x_target):
+        context_repr = self.mlp(x_context)
+        target_repr = self.mlp(x_target)
 
-        self.hidden = nn.ModuleList()
-        for i in range(len(hidden_dims) - 1):
-            self.hidden.append(nn.Linear(hidden_dims[i], hidden_dims[i + 1]))
+        context_repr = torch.where(valid_idx, context_repr, 0.0)
+        y_context = torch.where(valid_idx, y_context, 0.0)
 
-        self.output = nn.Linear(hidden_dims[-1], repr_dim)
+        cov = context_repr.T @ context_repr
+        cov.diagonal().add_(torch.exp(self.log_noise_var))
+        xty = context_repr.T @ y_context
+        chol = torch.linalg.cholesky(cov)
+        w = torch.cholesky_solve(xty, chol)
 
-    def forward(self, x, y, valid_idx):
-        x = torch.cat([x, y], dim=-1)
-        x = F.relu(self.input(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        for layer in self.hidden:
-            x = F.relu(layer(x))
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.output(x)
-
-        x = torch.where(valid_idx, x, 0.0)
-
-        x = x.sum(dim=0, keepdim=True) / valid_idx.sum()
-
-        return x
-
-
-class Decoder(nn.Module):
-    def __init__(self, repr_dim, x_dim, y_dim, hidden_dims, dropout):
-        super().__init__()
-        self.dropout = dropout
-
-        self.input = nn.Linear(repr_dim + x_dim, hidden_dims[0])
-
-        self.hidden = nn.ModuleList()
-        for i in range(len(hidden_dims) - 1):
-            self.hidden.append(nn.Linear(hidden_dims[i], hidden_dims[i + 1]))
-
-        self.output = nn.Linear(hidden_dims[-1], y_dim)
-
-    def forward(self, z, x):
-        z = z.repeat(x.shape[0], 1)
-        x = torch.cat([z, x], dim=1)
-
-        x = F.relu(self.input(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
-
-        for layer in self.hidden:
-            x = F.relu(layer(x))
-            x = F.dropout(x, p=self.dropout, training=self.training)
-
-        x = self.output(x)
-
-        return x
-
-
-class CNP(nn.Module):
-    def __init__(self, x_dim, y_dim, hidden_dims, repr_dim, dropout):
-        super().__init__()
-        self.encoder = Encoder(x_dim, y_dim, hidden_dims, repr_dim, dropout)
-        self.decoder = Decoder(repr_dim, x_dim, y_dim, hidden_dims, dropout)
-
-    def forward(self, x_context, y_context, y_context_valid, x_target):
-        z = self.encoder(x_context, y_context, y_context_valid)
-        y_pred = self.decoder(z, x_target)
-
+        y_pred = target_repr @ w
         return y_pred
 
 
@@ -106,7 +60,7 @@ def fit(train_data, config):
 
     context_size = int(0.5 * train_X.shape[1])
 
-    cnp = CNP(2, 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(config["device"])
+    cnp = DeepTime(2, 1, config["hidden_dims"], config["repr_dim"], dropout=config["dropout"]).to(config["device"])
 
     def loss_fn(x, y, valid_idx):
         idx = torch.randperm(len(y))
@@ -157,6 +111,7 @@ def fit(train_data, config):
             "lat_max": lat_max,
             "lon_min": lon_min,
             "lon_max": lon_max,
+            "losses": losses,
             # "mean_y": mean_y,
             # "std_y": std_y,
         },
@@ -188,7 +143,7 @@ def predict(test_data, train_data, config):
     ####### Temporarily
     # test_X = test_X[np.newaxis, ...].repeat(len(test_data.datetime), 1, 1).to(config["device"])
 
-    cnp = CNP(2, 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(config["device"])
+    cnp = DeepTime(2, 1, config["hidden_dims"], config["repr_dim"], dropout=config["dropout"]).to(config["device"])
     cnp.load_state_dict(torch.load(join(config["working_dir"], "model.pt")))
     cnp.eval()
 
