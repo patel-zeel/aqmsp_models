@@ -23,13 +23,10 @@ def fit_predict(train_data, test_data, config):
     def train_fn(ts):
         train_df = train_data.sel(datetime=ts).to_dataframe()
         train_df = train_df.dropna(subset=["value"]).reset_index()
-        X = train_df[config["features"]].values
-        y = train_df["value"].values
-        X_test = test_X.values
 
         model = IDW(exponent=config["exponent"])
-        model.fit(X, y)
-        pred_y = model.predict(X_test)
+        model.fit(train_df[config["features"]], train_df["value"])
+        pred_y = model.predict(test_X)
         return pred_y
 
     pred_y_list = Parallel(n_jobs=48)(delayed(train_fn)(ts) for ts in tqdm(train_data.datetime.values))
