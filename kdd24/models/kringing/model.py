@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from polire import IDW
+from polire import Kriging
 
 
 def fit(train_data, config):
@@ -27,7 +27,7 @@ def fit_predict(train_data, test_data, config):
         y = train_df["value"].values
         X_test = test_X.values
 
-        model = IDW(exponent=config["exponent"])
+        model = Kriging(variogram_model= config["variogram_model"])
         model.fit(X, y)
         pred_y = model.predict(X_test)
         return pred_y
