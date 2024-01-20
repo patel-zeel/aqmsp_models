@@ -1,0 +1,8 @@
+device = "cuda"
+random_state = 0
+hidden_dims = [256, 256, 256, 256]
+repr_dim = 64
+dropout = 0.2
+context_fraction = 0.5
+lr = 3e-4
+epochs = 5000
