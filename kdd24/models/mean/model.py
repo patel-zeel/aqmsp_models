@@ -25,7 +25,10 @@ def fit_predict(train_data, test_data, config):
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
         model = DummyRegressor(strategy="mean")
-        model.fit(train_df[config["features"]], train_df["value"])
+        try:
+            model.fit(train_df[config["features"]], train_df["value"])
+        except ValueError:
+            return np.zeros(len(test_X)) * np.nan
         pred_y = model.predict(test_X)
         return pred_y
 

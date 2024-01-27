@@ -28,7 +28,10 @@ def fit_predict(train_data, test_data, config):
         X_test = test_X.values
 
         model = IDW(exponent=config["exponent"])
-        model.fit(X, y)
+        try:
+            model.fit(X, y)
+        except ValueError:
+            return np.zeros(len(X_test)) * np.nan
         pred_y = model.predict(X_test)
         return pred_y
 

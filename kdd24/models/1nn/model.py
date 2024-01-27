@@ -18,14 +18,17 @@ def predict(test_data, train_data, config):
 
 
 def fit_predict(train_data, test_data, config):
-    test_X = test_data.isel(datetime=0).to_dataframe().reset_index()[config["features"]]
+    test_X = test_data.isel(datetime=0).to_dataframe().reset_index()[["lat", "lon"]]
 
     def train_fn(ts):
         train_df = train_data.sel(datetime=ts).to_dataframe()
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
         model = KNeighborsRegressor(n_neighbors=1)
-        model.fit(train_df[config["features"]], train_df["value"])
+        try:
+            model.fit(train_df[["lat", "lon"]], train_df["value"])
+        except ValueError:
+            return np.zeros(len(test_X)) * np.nan
         pred_y = model.predict(test_X)
         return pred_y
 

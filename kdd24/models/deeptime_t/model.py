@@ -58,25 +58,31 @@ def fit(train_data, config):
     train_X = torch.tensor(train_X.values, dtype=torch.float32)
     train_X = train_X[np.newaxis, ...].repeat(n_timestamps, 1, 1)
 
-    others = sorted(set(config["features"]) - {"lat", "lon"})
-    features = []
-    valid_idx_list = []
-    for feature in others:
-        feat_max = train_data[feature].max().item()
-        feat_min = train_data[feature].min().item()
-        feat_data = (train_data[feature].values - feat_min) / (feat_max - feat_min)
-        features.append(torch.tensor(feat_data, dtype=torch.float32)[..., np.newaxis])
-        valid_idx_list.append(~features[-1].isnan())
-        meta_dict[f"{feature}_min"] = feat_min
-        meta_dict[f"{feature}_max"] = feat_max
+    # add hour of day as a feature
+    hour = 2 * (train_data["datetime.hour"].values / 23.0) - 1
+    hour = torch.tensor(hour, dtype=torch.float32).reshape(-1, 1, 1).repeat(1, len(train_data.location_id), 1)
 
-    train_X = torch.cat([train_X] + features, dim=-1).to(config["device"])
+    train_X = torch.cat([train_X, hour], dim=-1).to(config["device"])
+
+    # others = sorted(set(config["features"]) - {"lat", "lon"})
+    # features = []
+    # valid_idx_list = []
+    # for feature in others:
+    #     feat_max = train_data[feature].max().item()
+    #     feat_min = train_data[feature].min().item()
+    #     feat_data = (train_data[feature].values - feat_min) / (feat_max - feat_min)
+    #     features.append(torch.tensor(feat_data, dtype=torch.float32)[..., np.newaxis])
+    #     valid_idx_list.append(~features[-1].isnan())
+    #     meta_dict[f"{feature}_min"] = feat_min
+    #     meta_dict[f"{feature}_max"] = feat_max
+
+    # train_X = torch.cat([train_X] + features, dim=-1).to(config["device"])
 
     train_y = torch.tensor(train_data.value.values, dtype=torch.float32).to(config["device"])[..., np.newaxis]
     # train_y = torch.log1p(train_y)
     valid_idx = ~train_y.isnan()
-    for valid_idx_ in valid_idx_list:
-        valid_idx = valid_idx & valid_idx_.to(config["device"])
+    # for valid_idx_ in valid_idx_list:
+    #     valid_idx = valid_idx & valid_idx_.to(config["device"])
 
     # mean_y = train_y[valid_idx].mean().item()
     # std_y = train_y[valid_idx].std().item()
@@ -86,9 +92,7 @@ def fit(train_data, config):
 
     context_size = int(0.5 * train_X.shape[1])
 
-    cnp = DeepTime(len(config["features"]), 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(
-        config["device"]
-    )
+    cnp = DeepTime(3, 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(config["device"])
 
     def loss_fn(x, y, valid_idx):
         idx = torch.randperm(len(y))
@@ -153,33 +157,37 @@ def predict(test_data, train_data, config):
         X = torch.tensor(X.values, dtype=torch.float32)
         X = X[np.newaxis, ...].repeat(len(data.datetime), 1, 1)
 
-        others = sorted(set(config["features"]) - {"lat", "lon"})
-        features = []
-        valid_idx_list = []
-        for feature in others:
-            feat_max = meta[f"{feature}_max"]
-            feat_min = meta[f"{feature}_min"]
-            feat_data = (data[feature].values - feat_min) / (feat_max - feat_min)
-            features.append(torch.tensor(feat_data, dtype=torch.float32)[..., np.newaxis])
-            valid_idx_list.append(~features[-1].isnan())
+        # add hour of day as a feature
+        hour = 2 * (data["datetime.hour"].values / 23.0) - 1
+        hour = torch.tensor(hour, dtype=torch.float32).reshape(-1, 1, 1).repeat(1, len(data.location_id), 1)
 
-        X = torch.cat([X] + features, dim=-1).to(config["device"])
+        X = torch.cat([X, hour], dim=-1).to(config["device"])
+
+        # others = sorted(set(config["features"]) - {"lat", "lon"})
+        # features = []
+        # valid_idx_list = []
+        # for feature in others:
+        #     feat_max = meta[f"{feature}_max"]
+        #     feat_min = meta[f"{feature}_min"]
+        #     feat_data = (data[feature].values - feat_min) / (feat_max - feat_min)
+        #     features.append(torch.tensor(feat_data, dtype=torch.float32)[..., np.newaxis])
+        #     valid_idx_list.append(~features[-1].isnan())
+
+        # X = torch.cat([X] + features, dim=-1).to(config["device"])
         y = torch.tensor(data.value.values, dtype=torch.float32).to(config["device"])[..., np.newaxis]
-        return X, y, valid_idx_list
+        return X, y
 
-    train_X, train_y, valid_idx_list = prepare(train_data)
-    test_X, _, _ = prepare(test_data)
+    train_X, train_y = prepare(train_data)
+    test_X, _ = prepare(test_data)
 
     # train_y = torch.log1p(train_y)
     valid_idx = ~train_y.isnan()
-    for valid_idx_ in valid_idx_list:
-        valid_idx = valid_idx & valid_idx_.to(config["device"])
+    # for valid_idx_ in valid_idx_list:
+    #     valid_idx = valid_idx & valid_idx_.to(config["device"])
 
     train_y[~valid_idx] = 0.0
 
-    cnp = DeepTime(len(config["features"]), 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(
-        config["device"]
-    )
+    cnp = DeepTime(3, 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(config["device"])
     cnp.load_state_dict(torch.load(join(config["working_dir"], "model.pt")))
     cnp.eval()
 

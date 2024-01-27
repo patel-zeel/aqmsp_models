@@ -1,4 +1,5 @@
 device = "cuda"
+n_encoders = 3
 random_state = 0
 hidden_dims = [256, 256, 256, 256]
 repr_dim = 64

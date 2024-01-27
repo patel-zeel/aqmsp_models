@@ -24,12 +24,31 @@ def fit_predict(train_data, test_data, config):
         train_df = train_data.sel(datetime=ts).to_dataframe()
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
+        lon_max = train_df["lon"].max()
+        lon_min = train_df["lon"].min()
+        lat_max = train_df["lat"].max()
+        lat_min = train_df["lat"].min()
+
+        train_df["lon"] = (train_df["lon"] - lon_min) / (lon_max - lon_min)
+        train_df["lat"] = (train_df["lat"] - lat_min) / (lat_max - lat_min)
+
+        mean = train_df["value"].mean()
+        std = train_df["value"].std()
+        train_df["value"] = (train_df["value"] - mean) / std
+
+        test_X_local = test_X.copy()
+        test_X_local["lon"] = (test_X_local["lon"] - lon_min) / (lon_max - lon_min)
+        test_X_local["lat"] = (test_X_local["lat"] - lat_min) / (lat_max - lat_min)
+
         model = LinearRegression(
             fit_intercept=config["fit_intercept"],
         )
-        model.fit(train_df[config["features"]], train_df["value"])
-        pred_y = model.predict(test_X)
-        return pred_y
+        try:
+            model.fit(train_df[config["features"]], train_df["value"])
+        except ValueError:
+            return np.zeros(len(test_X_local)) * np.nan
+        pred_y = model.predict(test_X_local)
+        return pred_y * std + mean
 
     pred_y_list = Parallel(n_jobs=48)(delayed(train_fn)(ts) for ts in tqdm(train_data.datetime.values))
     pred_y = np.array(pred_y_list)
