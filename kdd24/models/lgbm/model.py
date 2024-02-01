@@ -2,18 +2,21 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from sklearn.svm import SVR
+from lightgbm import LGBMRegressor
+import warnings
+
+warnings.filterwarnings("ignore")
 
 
 def fit(train_data, config):
     raise NotImplementedError(
-        "'fit' mode is not implemented for 'rf' model. Please use 'fit_predict' mode instead."
+        "'fit' mode is not implemented for 'lgbm' model. Please use 'fit_predict' mode instead."
     )  # Not saving the models because they consume too much space i.e. 13 GB for single fold and a year of data.
 
 
 def predict(test_data, train_data, config):
     raise NotImplementedError(
-        "'predict' mode is not implemented for 'rf' model. Please use 'fit_predict' mode instead."
+        "'predict' mode is not implemented for 'lgbm' model. Please use 'fit_predict' mode instead."
     )  # Models are not saved so can not be loaded directly in the predict mode.
 
 
@@ -24,7 +27,7 @@ def fit_predict(train_data, test_data, config):
         train_df = train_data.sel(datetime=ts).to_dataframe()
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
-        model = SVR()
+        model = LGBMRegressor(random_state=config["random_state"], n_jobs=1, n_estimators=100)
         try:
             model.fit(train_df[config["features"]], train_df["value"])
         except ValueError:

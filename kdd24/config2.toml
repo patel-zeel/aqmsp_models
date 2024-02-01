@@ -1,2 +1,2 @@
-features = ["lat", "lon", "t2m"]
+features = ["lat", "lon", "humidity", "temperature", "pressure", "wind_speed"]
 root_dir = "/opt/kdd24"

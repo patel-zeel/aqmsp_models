@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.egg-info/
 kdd24/_version.py
+.pytest_cache/
 
 # All shell scripts
 *.sh
@@ -12,3 +13,4 @@ kdd24/_version.py
 .vscode/
 nohup.out
 sandbox/
+catboost_info/

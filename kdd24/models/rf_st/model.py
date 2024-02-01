@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
 
 
 def fit(train_data, config):
@@ -18,13 +18,18 @@ def predict(test_data, train_data, config):
 
 
 def fit_predict(train_data, test_data, config):
-    test_X = test_data.isel(datetime=0).to_dataframe().reset_index()[config["features"]]
-
     def train_fn(ts):
         train_df = train_data.sel(datetime=ts).to_dataframe()
         train_df = train_df.dropna(subset=["value"]).reset_index()
 
-        model = SVR()
+        test_X = test_data.sel(datetime=ts).to_dataframe().reset_index()[config["features"]]
+
+        model = RandomForestRegressor(
+            n_estimators=config["n_estimators"],
+            n_jobs=1,
+            random_state=config["random_state"],
+            max_depth=config["max_depth"],
+        )
         try:
             model.fit(train_df[config["features"]], train_df["value"])
         except ValueError:
