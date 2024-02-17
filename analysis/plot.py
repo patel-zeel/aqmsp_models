@@ -16,7 +16,7 @@ parser.add_argument("--n_folds", type=int, required=True, help="number of folds"
 args = parser.parse_args()
 
 # working dir
-config = toml.load(f"kdd24/{args.common_config}.toml")
+config = toml.load(f"aqmsp_models/{args.common_config}.toml")
 config = {**config, **vars(args)}
 models = args.model.split(",")
 
@@ -36,16 +36,16 @@ for model in models:
             error = np.abs(preds["pred"] - preds["value"])
             nonnull_idx = ~np.isnan(error.values)
             df.loc[model, f"fold_{fold}"] = error.values[nonnull_idx].mean()
-            error = error.resample(datetime="1D").mean().mean(dim="location_id")
-            # plt.plot(error["datetime"], error, label=f"{model}")
+            error = error.resample(time="1D").mean().mean(dim="station")
+            # plt.plot(error["time"], error, label=f"{model}")
         except Exception as e:
             # print(e)
             continue
 
-    # daily_preds = preds["value"].resample(datetime="1D").mean().mean(dim="location_id")
-    # plt.plot(daily_preds["datetime"], daily_preds, label=f"value_fold_{fold}", linestyle="--")
+    # daily_preds = preds["value"].resample(time="1D").mean().mean(dim="station")
+    # plt.plot(daily_preds["time"], daily_preds, label=f"value_fold_{fold}", linestyle="--")
 
-# plt.xlabel("datetime")
+# plt.xlabel("time")
 # plt.ylabel("MAE")
 # plt.title("Mean Absolute Error")
 # plt.legend()

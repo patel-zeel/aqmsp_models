@@ -4,6 +4,7 @@ import importlib
 import argparse
 import toml
 from time import time
+from collections import namedtuple
 
 # Take arguments
 parser = argparse.ArgumentParser()
@@ -25,63 +26,67 @@ parser.add_argument(
 )
 parser.add_argument("--gpu", type=int, required=False, help="Physical GPU ID")
 # take mode argument for train, test. Provide choices
-args = parser.parse_args()
-os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+config = parser.parse_args()
+os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu)
 
 # load configs
-common_config = toml.load(f"kdd24/{args.common_config}.toml")
-model_config = toml.load(f"kdd24/models/{args.model}/{args.model_config}.toml")
-config = {**common_config, **model_config, **vars(args)}
+common_config = toml.load(f"aqmsp_models/{config.common_config}.toml")
+model_config = toml.load(f"aqmsp_models/aqmsp_models/models/{config.model}/{config.model_config}.toml")
 
 # set additional configs manually
-config["working_dir"] = join(
-    config["root_dir"], f"models/{args.common_config}/{args.model}/{args.dataset}/{args.model_config}/fold_{args.fold}"
+common_config["working_dir"] = join(
+    common_config["root_dir"],
+    f"models/{config.common_config}/{config.model}/{config.dataset}/{config.model_config}/fold_{config.fold}",
 )
-os.makedirs(config["working_dir"], exist_ok=True)
+os.makedirs(common_config["working_dir"], exist_ok=True)
+
+# Freeze it with namedtuple
+config = {**common_config, **model_config, **vars(config)}
+config = namedtuple("Config", config.keys())(*config.values())
 print(config)
 
 # main program
-if args.mode == "fit":
+if config.mode == "fit":
     init_time = time()
 
     # load data
-    load_train = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_train
+    load_train = importlib.import_module(f"aqmsp_models.datasets.{config.dataset}.dataset").load_train
     train_data = load_train(config)
 
     # fit model
-    fit = importlib.import_module(f"kdd24.models.{args.model}.model").fit
+    fit = importlib.import_module(f"aqmsp_models.models.{config.model}.model").fit
     fit(train_data, config)
 
     train_time = time() - init_time
     print(f"Training time: {train_time/60:.2f} minutes")
 
-elif args.mode == "predict":
+elif config.mode == "predict":
     init_time = time()
 
     # load data
-    load_train = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_train
-    load_test = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_test
+    load_train = importlib.import_module(f"aqmsp_models.datasets.{config.dataset}.dataset").load_train
+    load_test = importlib.import_module(f"aqmsp_models.datasets.{config.dataset}.dataset").load_test
     train_data = load_train(config)
     test_data = load_test(config)
 
     # predict
-    predict = importlib.import_module(f"kdd24.models.{args.model}.model").predict
+    predict = importlib.import_module(f"aqmsp_models.models.{config.model}.model").predict
     predict(test_data, train_data, config)
 
     test_time = time() - init_time
     print(f"Testing time: {test_time/60:.2f} minutes")
 
-elif args.mode == "fit_predict":
+elif config.mode == "fit_predict":
     init_time = time()
 
     # load data
-    load_train = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_train
-    load_test = importlib.import_module(f"kdd24.datasets.{args.dataset}.dataset").load_test
+    load_train = importlib.import_module(f"aqmsp_models.datasets.{config.dataset}.dataset").load_train
+    load_test = importlib.import_module(f"aqmsp_models.datasets.{config.dataset}.dataset").load_test
     train_data = load_train(config)
     test_data = load_test(config)
 
     # fit and predict
-    fit_predict = importlib.import_module(f"kdd24.models.{args.model}.model").fit_predict
+    fit_predict = importlib.import_module(f"aqmsp_models.models.{config.model}.model").fit_predict
     fit_predict(train_data, test_data, config)
 
     train_test_time = time() - init_time

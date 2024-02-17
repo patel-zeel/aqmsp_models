@@ -1,0 +1,4 @@
+features = ["lat", "lon"]
+root_dir = ""
+start_time = "2022-01"
+end_time = "2022-12"

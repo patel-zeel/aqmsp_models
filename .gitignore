@@ -3,7 +3,7 @@ __pycache__/
 *.ipynb_checkpoints
 *.pyc
 *.egg-info/
-kdd24/_version.py
+aqmsp_models/_version.py
 .pytest_cache/
 
 # All shell scripts

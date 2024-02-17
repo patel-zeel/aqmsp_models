@@ -1,6 +1,6 @@
-# KDD24
+# aqmsp_models
 
-[![CI](https://github.com/patel-zeel/kdd24/actions/workflows/CI.yml/badge.svg)](https://github.com/patel-zeel/kdd24/actions/workflows/CI.yml)
+[![CI](https://github.com/patel-zeel/aqmsp_models/actions/workflows/CI.yml/badge.svg)](https://github.com/patel-zeel/aqmsp_models/actions/workflows/CI.yml)
 
 ## Experiments
  
@@ -58,7 +58,7 @@ echo "Total time : $(echo "scale=2; $runtime/60" | bc -l) minutes"
 ## Repo Structure
 
 ```
-kdd24
+aqmsp_models
 |---models          # for all models
     |---<model1_name>
         |---model.py

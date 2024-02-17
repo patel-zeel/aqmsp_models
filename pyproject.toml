@@ -6,7 +6,7 @@ requires = [
 	"wheel>=0.33",
 	"numpy>=1.16",
 	"cython>=0.29",
-	]
+]
 
 [tool.setuptools_scm]
-write_to = "kdd24/_version.py"
+write_to = "aqmsp_models/_version.py"
