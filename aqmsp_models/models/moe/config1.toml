@@ -1,0 +1,3 @@
+n_experts = 5
+epochs = 200
+lr = 0.01

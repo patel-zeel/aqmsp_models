@@ -1,8 +1,8 @@
 device = "cuda"
 random_state = 0
-hidden_dims = [128, 128, 128, 128]
-repr_dim = 32
-dropout = 0.01
+# hidden_dims = [128, 128, 128, 128]
+# repr_dim = 32
+# dropout = 0.05
 context_fraction = 0.5
 lr = 3e-4
 epochs = 50

@@ -1,3 +1,7 @@
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
 from os.path import join
 import numpy as np
 import pandas as pd
@@ -5,6 +9,10 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributions as dist
+
+from torch.utils.data import Dataset, DataLoader
+from astra.torch.models import MLPRegressor, SIRENRegressor
 
 from joblib import Parallel, delayed
 
@@ -14,26 +22,13 @@ class Encoder(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-        self.input = nn.Linear(x_dim + y_dim, hidden_dims[0])
+        self.mlp = SIRENRegressor(x_dim + y_dim, hidden_dims, repr_dim, dropout=dropout)
 
-        self.hidden = nn.ModuleList()
-        for i in range(len(hidden_dims) - 1):
-            self.hidden.append(nn.Linear(hidden_dims[i], hidden_dims[i + 1]))
-
-        self.output = nn.Linear(hidden_dims[-1], repr_dim)
-
-    def forward(self, x, y, valid_idx):
+    def forward(self, x, y):
         x = torch.cat([x, y], dim=-1)
-        x = F.relu(self.input(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        for layer in self.hidden:
-            x = F.relu(layer(x))
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.output(x)
+        x = self.mlp(x)
 
-        x = torch.where(valid_idx, x, 0.0)
-
-        x = x.sum(dim=0, keepdim=True) / valid_idx.sum()
+        x = x.mean(dim=0, keepdim=True)
 
         return x
 
@@ -43,28 +38,15 @@ class Decoder(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-        self.input = nn.Linear(repr_dim + x_dim, hidden_dims[0])
-
-        self.hidden = nn.ModuleList()
-        for i in range(len(hidden_dims) - 1):
-            self.hidden.append(nn.Linear(hidden_dims[i], hidden_dims[i + 1]))
-
-        self.output = nn.Linear(hidden_dims[-1], y_dim)
+        self.mlp = SIRENRegressor(repr_dim + x_dim, hidden_dims, y_dim * 2, dropout=dropout)
 
     def forward(self, z, x):
         z = z.repeat(x.shape[0], 1)
         x = torch.cat([z, x], dim=1)
 
-        x = F.relu(self.input(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.mlp(x)
 
-        for layer in self.hidden:
-            x = F.relu(layer(x))
-            x = F.dropout(x, p=self.dropout, training=self.training)
-
-        x = self.output(x)
-
-        return x
+        return x[:, 0:1], F.softplus(x[:, 1:2])
 
 
 class CNP(nn.Module):
@@ -73,185 +55,158 @@ class CNP(nn.Module):
         self.encoder = Encoder(x_dim, y_dim, hidden_dims, repr_dim, dropout)
         self.decoder = Decoder(repr_dim, x_dim, y_dim, hidden_dims, dropout)
 
-    def forward(self, x_context, y_context, y_context_valid, x_target):
-        z = self.encoder(x_context, y_context, y_context_valid)
-        y_pred = self.decoder(z, x_target)
+    def forward(self, x_context, y_context, x_target):
+        def single_forward(x_context, y_context, x_target):
+            mean = y_context.mean()
+            std = y_context.std()
+            y_context = (y_context - mean) / std
+            z = self.encoder(x_context, y_context)
+            y_pred, y_std = self.decoder(z, x_target)
+            return y_pred * std + mean, y_std * std
 
-        return y_pred
+        y_pred, y_std = torch.vmap(single_forward, in_dims=(0, 0, 0), out_dims=0, randomness="same")(
+            x_context, y_context, x_target
+        )
+        return y_pred, y_std
 
 
 def fit(train_data, config):
-    torch.manual_seed(config["random_state"])
-    n_timestamps = len(train_data.time)
-    lat_min = train_data["lat"].min().item()
-    lat_max = train_data["lat"].max().item()
-    lon_min = train_data["lon"].min().item()
-    lon_max = train_data["lon"].max().item()
+    torch.manual_seed(config.random_state)
 
-    meta_dict = {
-        "lat_min": lat_min,
-        "lat_max": lat_max,
-        "lon_min": lon_min,
-        "lon_max": lon_max,
-        # "mean_y": mean_y,
-        # "std_y": std_y,
-    }
+    train_df = train_data.to_dataframe().reset_index()
 
-    train_X = train_data.isel(time=0).to_dataframe().reset_index()[["lat", "lon"]]
-    train_X["lat"] = (train_X["lat"] - lat_min) / (lat_max - lat_min)
-    train_X["lon"] = (train_X["lon"] - lon_min) / (lon_max - lon_min)
-    train_X = torch.tensor(train_X.values, dtype=torch.float32)
-    train_X = train_X[np.newaxis, ...].repeat(n_timestamps, 1, 1)
+    meta_dict = {}
+    for feature in config.features:
+        fet_min = train_data[feature].min().item()
+        fet_max = train_data[feature].max().item()
 
-    others = sorted(set(config["features"]) - {"lat", "lon"})
-    features = []
-    valid_idx_list = []
-    for feature in others:
-        feat_max = train_data[feature].max().item()
-        feat_min = train_data[feature].min().item()
-        feat_data = (train_data[feature].values - feat_min) / (feat_max - feat_min)
-        features.append(torch.tensor(feat_data, dtype=torch.float32)[..., np.newaxis])
-        valid_idx_list.append(~features[-1].isnan())
-        meta_dict[f"{feature}_min"] = feat_min
-        meta_dict[f"{feature}_max"] = feat_max
-
-    train_X = torch.cat([train_X] + features, dim=-1).to(config["device"])
-
-    train_y = torch.tensor(train_data.value.values, dtype=torch.float32).to(config["device"])[..., np.newaxis]
-    # train_y = torch.log1p(train_y)
-    valid_idx = ~train_y.isnan()
-    for valid_idx_ in valid_idx_list:
-        valid_idx = valid_idx & valid_idx_.to(config["device"])
-
-    # mean_y = train_y[valid_idx].mean().item()
-    # std_y = train_y[valid_idx].std().item()
-    # train_y = (train_y - mean_y) / std_y
-
-    train_y[~valid_idx] = 0.0
-
-    context_size = int(0.5 * train_X.shape[1])
-
-    cnp = CNP(len(config["features"]), 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(
-        config["device"]
-    )
-
-    def loss_fn(x, y, valid_idx):
-        idx = torch.randperm(len(y))
-        context_idx = idx[:context_size]
-        target_idx = idx[context_size:]
-        context_x = x[context_idx]
-        context_y = y[context_idx]
-        context_valid = valid_idx[context_idx]
-        target_x = x[target_idx]
-        target_y = y[target_idx]
-        target_valid = valid_idx[target_idx]
-
-        # scale
-        context_y_mean = context_y.sum(dim=0, keepdim=True) / context_valid.sum()
-        context_y_for_std = torch.where(context_valid, context_y, context_y_mean)
-        context_y_std = torch.sqrt(
-            ((context_y_for_std - context_y_mean) ** 2).sum(dim=0, keepdim=True) / context_valid.sum()
+        meta_dict.update(
+            {
+                f"{feature}_min": fet_min,
+                f"{feature}_max": fet_max,
+            }
         )
-        context_y = (context_y - context_y_mean) / context_y_std
 
-        target_out = cnp(context_x, context_y, context_valid, target_x) * context_y_std + context_y_mean
-        target_out_clean = torch.where(target_valid, target_out, 0.0)
-        loss = (target_out_clean - target_y) ** 2  # / (context_y_std**2 + 1e-6)
-        # print(loss.isnan().sum(), target_valid.sum())
-        # print(loss.isnan().sum(), target_valid.sum())
-        # print(len(target_valid), target_valid, target_valid.sum())
-        return loss.sum() / target_valid.sum()
+        train_df[feature] = (train_df[feature] - fet_min) / (fet_max - fet_min)
 
-    epochs = config["epochs"]
-    pbar = tqdm(range(epochs))
-    vloss = torch.vmap(loss_fn, randomness="different")
-    optimizer = torch.optim.Adam(cnp.parameters(), lr=config["lr"])
+    class CustomDataset(Dataset):
+        def __init__(self, df):
+            self.df = df
+            self.ts = self.df.time.unique()
+
+        def __len__(self):
+            return len(self.ts)
+
+        def __getitem__(self, idx):
+            t = self.ts[idx]
+            ts_df = self.df[self.df.time == t]
+            ts_df = ts_df.dropna(subset=[config.target])
+            X = torch.tensor(ts_df[config.features].values, dtype=torch.float32)
+            y = torch.tensor(ts_df[[config.target]].values, dtype=torch.float32)
+            idx = np.random.permutation(len(X))
+            num_context = int(config.context_fraction * len(X))
+            X_context = X[idx[:num_context]]
+            y_context = y[idx[:num_context]]
+            X_target = X[idx[num_context:]]
+            y_target = y[idx[num_context:]]
+            return X_context, y_context, X_target, y_target
+
+    dataset = CustomDataset(train_df)
+    dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
+
+    cnp = CNP(len(config.features), 1, config.hidden_dims, config.repr_dim, config.dropout).to(config.device)
+    optimizer = torch.optim.Adam(cnp.parameters(), lr=config.lr)
+
     losses = []
+    best_loss = np.inf
+    for epoch in range(config.epochs):
+        epoch_loss = 0
+        for X_context, y_context, X_target, y_target in tqdm(dataloader):
+            X_context = X_context.to(config.device)
+            y_context = y_context.to(config.device)
+            X_target = X_target.to(config.device)
+            y_target = y_target.to(config.device)
 
-    for epoch in pbar:
-        optimizer.zero_grad()
-        loss = vloss(train_X, train_y, valid_idx).mean()
+            y_pred, y_std = cnp(X_context, y_context, X_target)
+            loss = -dist.Normal(y_pred, y_std + 1e-10).log_prob(y_target).mean()
+            epoch_loss += loss.item()
 
-        loss.backward()
-        optimizer.step()
-        losses.append(loss.item())
-        pbar.set_description(f"Loss: {loss.item():.4f}")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-    torch.save(cnp.state_dict(), join(config["working_dir"], "model.pt"))
+        losses.append(epoch_loss / len(dataloader))
+
+        if losses[-1] < best_loss:
+            best_loss = losses[-1]
+            torch.save(cnp.state_dict(), join(config.working_dir, "model.pt"))
+
+        print(f"Epoch {epoch + 1}/{config.epochs}, Loss: {losses[-1]:.4f}")
 
     meta_dict["losses"] = losses
     torch.save(
         meta_dict,
-        join(config["working_dir"], "metadata.pt"),
+        join(config.working_dir, "metadata.pt"),
     )
 
 
 def predict(test_data, train_data, config):
     # load meta
-    meta = torch.load(join(config["working_dir"], "metadata.pt"))
+    meta = torch.load(join(config.working_dir, "metadata.pt"))
 
-    # prepare data
-    def prepare(data):
-        X = data.isel(time=0).to_dataframe().reset_index()[["lat", "lon"]]
-        X["lat"] = (X["lat"] - meta["lat_min"]) / (meta["lat_max"] - meta["lat_min"])
-        X["lon"] = (X["lon"] - meta["lon_min"]) / (meta["lon_max"] - meta["lon_min"])
-        X = torch.tensor(X.values, dtype=torch.float32)
-        X = X[np.newaxis, ...].repeat(len(data.time), 1, 1)
+    # prepare test data
+    train_df = train_data.to_dataframe().reset_index()
+    test_df = test_data.to_dataframe().reset_index()
+    for feature in config.features:
+        fet_min = meta[f"{feature}_min"]
+        fet_max = meta[f"{feature}_max"]
+        train_df[feature] = (train_df[feature] - fet_min) / (fet_max - fet_min)
+        test_df[feature] = (test_df[feature] - fet_min) / (fet_max - fet_min)
 
-        others = sorted(set(config["features"]) - {"lat", "lon"})
-        features = []
-        valid_idx_list = []
-        for feature in others:
-            feat_max = meta[f"{feature}_max"]
-            feat_min = meta[f"{feature}_min"]
-            feat_data = (data[feature].values - feat_min) / (feat_max - feat_min)
-            features.append(torch.tensor(feat_data, dtype=torch.float32)[..., np.newaxis])
-            valid_idx_list.append(~features[-1].isnan())
+    class CustomDataset(Dataset):
+        def __init__(self, train_df, test_df):
+            self.train_df = train_df
+            self.test_df = test_df
+            self.ts = self.train_df.time.unique()
 
-        X = torch.cat([X] + features, dim=-1).to(config["device"])
-        y = torch.tensor(data.value.values, dtype=torch.float32).to(config["device"])[..., np.newaxis]
-        return X, y, valid_idx_list
+        def __len__(self):
+            return len(self.ts)
 
-    train_X, train_y, valid_idx_list = prepare(train_data)
-    test_X, _, _ = prepare(test_data)
+        def __getitem__(self, idx):
+            t = self.ts[idx]
+            train_df = self.train_df[self.train_df.time == t]
+            test_df = self.test_df[self.test_df.time == t]
+            train_X = torch.tensor(train_df[config.features].values, dtype=torch.float32)
+            test_X = torch.tensor(test_df[config.features].values, dtype=torch.float32)
+            train_y = torch.tensor(train_df[[config.target]].values, dtype=torch.float32)
+            test_y = torch.tensor(test_df[[config.target]].values, dtype=torch.float32)
+            return train_X, train_y, test_X, test_y
 
-    # train_y = torch.log1p(train_y)
-    valid_idx = ~train_y.isnan()
-    for valid_idx_ in valid_idx_list:
-        valid_idx = valid_idx & valid_idx_.to(config["device"])
+    # dataset
+    dataset = CustomDataset(train_df, test_df)
+    dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=False)
 
-    train_y[~valid_idx] = 0.0
-
-    cnp = CNP(len(config["features"]), 1, config["hidden_dims"], config["repr_dim"], config["dropout"]).to(
-        config["device"]
-    )
-    cnp.load_state_dict(torch.load(join(config["working_dir"], "model.pt")))
+    # load model
+    cnp = CNP(len(config.features), 1, config.hidden_dims, config.repr_dim, config.dropout).to(config.device)
+    cnp.load_state_dict(torch.load(join(config.working_dir, "model.pt")))
     cnp.eval()
 
-    def forward(x, y, valid_idx, x_test):
-        y_clean = torch.where(valid_idx, y, 0.0)
-        y_mean = y_clean.sum(dim=0, keepdim=True) / valid_idx.sum()
-        y_clean_for_std = torch.where(valid_idx, y, y_mean)
-        y_std = torch.sqrt(((y_clean_for_std - y_mean) ** 2).sum(dim=0, keepdim=True) / valid_idx.sum())
-        y = (y - y_mean) / y_std
-        y_pred = cnp(x, y, valid_idx, x_test)
-        y_pred = y_pred * y_std + y_mean
-
-        # clip negative predictions
-        y_pred = torch.where(y_pred < 0, 0.0, y_pred)
-        return y_pred
-
     with torch.no_grad():
-        # print(train_X.shape, train_y.shape, valid_idx.shape)
-        y_pred = torch.vmap(forward, in_dims=(0, 0, 0, 0), out_dims=0)(train_X, train_y, valid_idx, test_X)
-        # y_pred = y_pred * meta["std_y"] + meta["mean_y"]
-        # y_pred = torch.expm1(y_pred)
-        y_pred = y_pred.cpu().numpy().squeeze()
+        y_pred = []
+        for train_X, train_y, test_X, test_y in tqdm(dataloader):
+            train_X = train_X.to(config.device)
+            train_y = train_y.to(config.device)
+            test_X = test_X.to(config.device)
+            test_y = test_y.to(config.device)
 
-    test_data["pred"] = (("time", "station"), y_pred)
-    save_path = join(config["working_dir"], "predictions.nc")
+            pred_y, std_y = cnp(train_X, train_y, test_X)
+            y_pred.append(pred_y.cpu().numpy())
+        y_pred = np.concatenate(y_pred, axis=0)
+
+    test_data[f"{config.target}_pred"] = (("time", "station"), y_pred.squeeze())
+    save_path = join(config.working_dir, "predictions.nc")
     test_data.to_netcdf(save_path)
-    print(f"saved {config['model']} predictions to {save_path}")
+    print(f"saved {config.model} predictions to {save_path}")
 
 
 def fit_predict(train_data, test_data, config):

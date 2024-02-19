@@ -18,26 +18,21 @@ def predict(test_data, train_data, config):
 
 
 def fit_predict(train_data, test_data, config):
-    test_X = test_data.isel(time=0).to_dataframe().reset_index()[config["features"]]
-
     def train_fn(ts):
         train_df = train_data.sel(time=ts).to_dataframe()
-        train_df = train_df.dropna(subset=["value"]).reset_index()
-        X = train_df[config["features"]].values
-        y = train_df["value"].values
-        X_test = test_X.values
+        train_df = train_df.dropna(subset=[config.target]).reset_index()
+        X = train_df[["lat", "lon"]].values
+        y = train_df[config.target].values
+        X_test = test_data.sel(time=ts).to_dataframe()[["lat", "lon"]].values
 
-        model = IDW(exponent=config["exponent"])
-        try:
-            model.fit(X, y)
-        except ValueError:
-            return np.zeros(len(X_test)) * np.nan
+        model = IDW(exponent=config.exponent)
+        model.fit(X, y)
         pred_y = model.predict(X_test)
         return pred_y
 
     pred_y_list = Parallel(n_jobs=48)(delayed(train_fn)(ts) for ts in tqdm(train_data.time.values))
     pred_y = np.array(pred_y_list)
-    test_data["pred"] = (("time", "station"), pred_y)
-    save_path = f"{config['working_dir']}/predictions.nc"
+    test_data[f"{config.target}_pred"] = (("time", "station"), pred_y)
+    save_path = f"{config.working_dir}/predictions.nc"
     test_data.to_netcdf(save_path)
-    print(f"saved {config['model']} predictions to {save_path}")
+    print(f"saved {config.model} predictions to {save_path}")

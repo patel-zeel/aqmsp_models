@@ -4,7 +4,7 @@ import xarray as xr
 
 
 def load(config, mode):
-    period = slice(config.start_time, config.end_time)
+    period = "2023-12"
 
     data_path = join("/home/patel_zeel/aqmsp/aqmsp_data/datasets/cpcb/ijcai24/data.nc")
     locs_path = join(config.root_dir, f"data/purpleair/lov/{mode}_{config.fold}.npy")

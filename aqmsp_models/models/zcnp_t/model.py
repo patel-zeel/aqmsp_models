@@ -109,7 +109,7 @@ def fit(train_data, config):
 
     train_X = torch.cat([train_X, hour], dim=-1).to(config["device"])
 
-    # others = sorted(set(config["features"]) - {"lat", "lon"})
+    # others = sorted(set(config.features) - {"lat", "lon"})
     # features = []
     # valid_idx_list = []
     # for feature in others:
@@ -208,7 +208,7 @@ def predict(test_data, train_data, config):
 
         X = torch.cat([X, hour], dim=-1).to(config["device"])
 
-        # others = sorted(set(config["features"]) - {"lat", "lon"})
+        # others = sorted(set(config.features) - {"lat", "lon"})
         # features = []
         # valid_idx_list = []
         # for feature in others:
@@ -256,10 +256,10 @@ def predict(test_data, train_data, config):
         # y_pred = torch.expm1(y_pred)
         y_pred = y_pred.cpu().numpy().squeeze()
 
-    test_data["pred"] = (("time", "station"), y_pred)
+    test_data[f"{config.target}_pred"] = (("time", "station"), y_pred)
     save_path = join(config["working_dir"], "predictions.nc")
     test_data.to_netcdf(save_path)
-    print(f"saved {config['model']} predictions to {save_path}")
+    print(f"saved {config.model} predictions to {save_path}")
 
 
 def fit_predict(train_data, test_data, config):

@@ -1,6 +1,6 @@
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 from os.path import join
 import numpy as np
@@ -9,49 +9,21 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+import torch.distributions as dist
 
-from astra.torch.models import MLPRegressor, SIRENRegressor
+from torch.utils.data import Dataset, DataLoader
+import neuralprocesses.torch as nps
+from einops import rearrange
 
 from joblib import Parallel, delayed
 
 
-class DeepTime(nn.Module):
-    def __init__(self, x_dim, y_dim, hidden_dims, repr_dim, dropout):
-        super().__init__()
-        self.mlp = SIRENRegressor(x_dim, hidden_dims, repr_dim, dropout=dropout)
-        # self.mlp = MLPRegressor(x_dim, hidden_dims, repr_dim, dropout=dropout)
-        self.log_noise_var = nn.Parameter(torch.tensor(np.log(0.01)))
+def transform(x):
+    return rearrange(x, "b n d -> b d n")
 
-    def forward(self, x_context, y_context, x_target):
-        mean = y_context.mean(dim=1, keepdim=True)  # over datapoints dim
-        std = y_context.std(dim=1, keepdim=True)  # over datapoints dim
-        y_context = (y_context - mean) / std
 
-        def single_dim_calc(x_context, y_context, x_target):
-            context_repr = self.mlp(x_context)
-            target_repr = self.mlp(x_target)
-
-            # add bias term
-            context_repr = torch.cat(
-                [context_repr, torch.ones(context_repr.shape[0], 1, device=x_context.device)], dim=1
-            )
-            target_repr = torch.cat([target_repr, torch.ones(target_repr.shape[0], 1, device=x_context.device)], dim=1)
-
-            cov = context_repr.T @ context_repr
-            cov.diagonal().add_(torch.exp(self.log_noise_var))
-            xty = context_repr.T @ y_context
-
-            chol = torch.linalg.cholesky(cov)
-            w = torch.cholesky_solve(xty, chol)
-            y_pred = target_repr @ w
-            return y_pred
-
-        y_pred = torch.vmap(single_dim_calc, in_dims=(0, 0, 0), out_dims=0, randomness="same")(
-            x_context, y_context, x_target
-        )
-
-        return y_pred * std + mean
+def inv_transform(x):
+    return rearrange(x, "b d n -> b n d")
 
 
 def fit(train_data, config):
@@ -98,7 +70,10 @@ def fit(train_data, config):
     dataset = CustomDataset(train_df)
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
-    cnp = DeepTime(len(config.features), 1, config.hidden_dims, config.repr_dim, config.dropout).to(config.device)
+    # cnp = CNP(len(config.features), 1, config.hidden_dims, config.repr_dim, config.dropout).to(config.device)
+    cnp = nps.construct_convgnp(dim_x=len(config.features), dim_y=1, unet_channels=(64, 64, 64), likelihood="het").to(
+        config.device
+    )
     optimizer = torch.optim.Adam(cnp.parameters(), lr=config.lr)
 
     losses = []
@@ -111,11 +86,19 @@ def fit(train_data, config):
             X_target = X_target.to(config.device)
             y_target = y_target.to(config.device)
 
-            y_pred = cnp(X_context, y_context, X_target)
-            loss = F.mse_loss(y_pred, y_target)
+            X_context, X_target = transform(X_context), transform(X_target)
+            y_context, y_target = transform(y_context), transform(y_target)
+
+            mean = y_context.mean(dim=-1, keepdim=True)
+            std = y_context.std(dim=-1, keepdim=True)
+
+            y_context = (y_context - mean) / std
+            y_target = (y_target - mean) / std
+
+            loss = -torch.mean(nps.loglik(cnp, X_context, y_context, X_target, y_target, normalise=True))
             epoch_loss += loss.item()
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
@@ -171,19 +154,31 @@ def predict(test_data, train_data, config):
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=False)
 
     # load model
-    cnp = DeepTime(len(config.features), 1, config.hidden_dims, config.repr_dim, config.dropout).to(config.device)
+    cnp = nps.construct_convgnp(dim_x=len(config.features), dim_y=1, unet_channels=(64, 64, 64), likelihood="het")
     cnp.load_state_dict(torch.load(join(config.working_dir, "model.pt")))
     cnp.eval()
 
     with torch.no_grad():
         y_pred = []
         for train_X, train_y, test_X, test_y in tqdm(dataloader):
-            train_X = train_X.to(config.device)
-            train_y = train_y.to(config.device)
-            test_X = test_X.to(config.device)
-            test_y = test_y.to(config.device)
+            train_X = train_X  # .to(config.device)
+            train_y = train_y  # .to(config.device)
+            test_X = test_X  # .to(config.device)
+            test_y = test_y  # .to(config.device)
 
-            pred_y = cnp(train_X, train_y, test_X)
+            train_X, test_X = transform(train_X), transform(test_X)
+            train_y, test_y = transform(train_y), transform(test_y)
+
+            mean = train_y.mean(dim=-1, keepdim=True)
+            std = train_y.std(dim=-1, keepdim=True)
+            train_y = (train_y - mean) / std
+
+            print(train_X.device, test_X.device, train_y.device, test_y.device)
+            pred_y, _, _, _ = nps.predict(cnp, train_X, train_y, test_X)
+            pred_y = inv_transform(pred_y)
+
+            pred_y = pred_y * std + mean
+
             y_pred.append(pred_y.cpu().numpy())
         y_pred = np.concatenate(y_pred, axis=0)
 

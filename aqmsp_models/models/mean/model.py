@@ -18,23 +18,20 @@ def predict(test_data, train_data, config):
 
 
 def fit_predict(train_data, test_data, config):
-    test_X = test_data.isel(time=0).to_dataframe().reset_index()[config.features]
-
     def train_fn(ts):
         train_df = train_data.sel(time=ts).to_dataframe()
         train_df = train_df.dropna(subset=[config.target]).reset_index()
+        test_df = test_data.sel(time=ts).to_dataframe()
 
         model = DummyRegressor(strategy="mean")
-        try:
-            model.fit(train_df[config.features], train_df[config.target])
-        except ValueError:
-            return np.zeros(len(test_X)) * np.nan
-        pred_y = model.predict(test_X)
+
+        model.fit(train_df[["lat", "lon"]], train_df[config.target])
+        pred_y = model.predict(test_df[["lat", "lon"]])
         return pred_y
 
     pred_y_list = Parallel(n_jobs=48)(delayed(train_fn)(ts) for ts in tqdm(train_data.time.values))
     pred_y = np.array(pred_y_list)
-    test_data["pred"] = (("time", "station"), pred_y)
+    test_data[f"{config.target}_pred"] = (("time", "station"), pred_y)
     save_path = f"{config.working_dir}/predictions.nc"
     test_data.to_netcdf(save_path)
     print(f"saved {config.model} predictions to {save_path}")

@@ -117,7 +117,7 @@ class GatedCNP(nn.Module):
 def fit(train_data, config):
     torch.manual_seed(config["random_state"])
     n_timestamps = len(train_data.time)
-    train_X = train_data.isel(time=0).to_dataframe().reset_index()[config["features"]]
+    train_X = train_data.isel(time=0).to_dataframe().reset_index()[config.features]
     lat_min = train_X["lat"].min().item()
     lat_max = train_X["lat"].max().item()
     lon_min = train_X["lon"].min().item()
@@ -205,7 +205,7 @@ def predict(test_data, train_data, config):
     meta = torch.load(join(config["working_dir"], "metadata.pt"))
 
     # prepare data
-    train_X = train_data.isel(time=0).to_dataframe().reset_index()[config["features"]]
+    train_X = train_data.isel(time=0).to_dataframe().reset_index()[config.features]
     train_X["lat"] = (train_X["lat"] - meta["lat_min"]) / (meta["lat_max"] - meta["lat_min"])
     train_X["lon"] = (train_X["lon"] - meta["lon_min"]) / (meta["lon_max"] - meta["lon_min"])
     train_X = torch.tensor(train_X.values, dtype=torch.float32)
@@ -213,7 +213,7 @@ def predict(test_data, train_data, config):
     ####### Temporarily
     train_X = train_X[np.newaxis, ...].repeat(len(train_data.time), 1, 1).to(config["device"])
 
-    test_X = test_data.isel(time=0).to_dataframe().reset_index()[config["features"]]
+    test_X = test_data.isel(time=0).to_dataframe().reset_index()[config.features]
     test_X["lat"] = (test_X["lat"] - meta["lat_min"]) / (meta["lat_max"] - meta["lat_min"])
     test_X["lon"] = (test_X["lon"] - meta["lon_min"]) / (meta["lon_max"] - meta["lon_min"])
     test_X = torch.tensor(test_X.values, dtype=torch.float32).to(config["device"])
@@ -246,10 +246,10 @@ def predict(test_data, train_data, config):
         # y_pred = torch.expm1(y_pred)
         y_pred = y_pred.cpu().numpy().squeeze()
 
-    test_data["pred"] = (("time", "station"), y_pred)
+    test_data[f"{config.target}_pred"] = (("time", "station"), y_pred)
     save_path = join(config["working_dir"], "predictions.nc")
     test_data.to_netcdf(save_path)
-    print(f"saved {config['model']} predictions to {save_path}")
+    print(f"saved {config.model} predictions to {save_path}")
 
 
 def fit_predict(train_data, test_data, config):
