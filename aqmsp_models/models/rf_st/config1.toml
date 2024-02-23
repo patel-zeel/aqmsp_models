@@ -1,3 +1,4 @@
-n_estimators = 10000
-max_depth = 100000000
-random_state = 0
+max_depth = 10
+n_estimators = 2000       # pass none max_depth
+random_state = 1
+lags = [1, 2, 3, 4, 5, 6]

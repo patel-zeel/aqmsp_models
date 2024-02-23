@@ -1,4 +1,4 @@
-features = ["lat", "lon", "T2_K"]
+features = ["lat", "lon", "d_motorway", "pop_3km"]
 root_dir = "/opt/aqmsp_models"
 seed = 0
 target = "PM2.5"

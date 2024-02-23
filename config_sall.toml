@@ -1,0 +1,18 @@
+features = [
+    "lat",
+    "lon",
+    "pop_3km",
+    # "elevation",
+    "PBL_WRF_M",
+    "T2_K",
+    "ZGRID_M_LAY0",
+    "PRESS_MB_LAY0",
+    "HUMID_PPM_LAY0",
+    "U10_MpS",
+    "V10_MpS",
+]
+root_dir = "/opt/aqmsp_models"
+seed = 0
+#
+
+target = "PM2.5"

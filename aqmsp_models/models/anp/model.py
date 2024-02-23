@@ -22,15 +22,12 @@ class Encoder(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-        self.mlp = SIRENRegressor(x_dim + y_dim, hidden_dims, repr_dim, dropout=dropout)
-        # self.mlp = MLPRegressor(x_dim + y_dim, hidden_dims, repr_dim, dropout=dropout)
+        # self.mlp = SIRENRegressor(x_dim + y_dim, hidden_dims, repr_dim, dropout=dropout)
+        self.mlp = MLPRegressor(x_dim + y_dim, hidden_dims, repr_dim, dropout=dropout)
 
     def forward(self, x, y):
         x = torch.cat([x, y], dim=-1)
         x = self.mlp(x)
-
-        x = x.mean(dim=0, keepdim=True)
-
         return x
 
 
@@ -39,16 +36,16 @@ class Decoder(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-        self.mlp = SIRENRegressor(repr_dim + x_dim, hidden_dims, y_dim * 2, dropout=dropout)
-        # self.mlp = MLPRegressor(repr_dim + x_dim, hidden_dims, y_dim * 2, dropout=dropout)
+        # self.mlp = SIRENRegressor(repr_dim + x_dim, hidden_dims, y_dim, dropout=dropout)
+        self.mlp = MLPRegressor(repr_dim + x_dim, hidden_dims, y_dim, dropout=dropout)
 
     def forward(self, z, x):
-        z = z.repeat(x.shape[0], 1)
         x = torch.cat([z, x], dim=1)
 
         x = self.mlp(x)
 
-        return x[:, 0:1], F.softplus(x[:, 1:2])
+        # return x[:, 0:1], F.softplus(x[:, 1:2])
+        return x
 
 
 class CNP(nn.Module):
@@ -62,14 +59,18 @@ class CNP(nn.Module):
             mean = y_context.mean()
             std = y_context.std()
             y_context = (y_context - mean) / std
-            z = self.encoder(x_context, y_context)
-            y_pred, y_std = self.decoder(z, x_target)
-            return y_pred * std + mean, y_std * std
+            z = self.encoder(x_context, y_context)  # (n, d)
+            weights = x_target @ x_context.T / (x_target.shape[-1] ** 0.5)  # (m, n)
+            weights = F.softmax(weights, dim=-1)  # (m, n)
+            rep = weights @ z  # (m, d)
 
-        y_pred, y_std = torch.vmap(single_forward, in_dims=(0, 0, 0), out_dims=0, randomness="same")(
+            y_pred = self.decoder(rep, x_target)
+            return y_pred * std + mean
+
+        y_pred = torch.vmap(single_forward, in_dims=(0, 0, 0), out_dims=0, randomness="same")(
             x_context, y_context, x_target
         )
-        return y_pred, y_std
+        return y_pred
 
 
 def fit(train_data, config):
@@ -129,8 +130,8 @@ def fit(train_data, config):
             X_target = X_target.to(config.device)
             y_target = y_target.to(config.device)
 
-            y_pred, y_std = cnp(X_context, y_context, X_target)
-            loss = -dist.Normal(y_pred, y_std + 1e-10).log_prob(y_target).mean()
+            y_pred = cnp(X_context, y_context, X_target)
+            loss = F.mse_loss(y_pred, y_target)
             epoch_loss += loss.item()
 
             optimizer.zero_grad()
@@ -201,7 +202,7 @@ def predict(test_data, train_data, config):
             test_X = test_X.to(config.device)
             test_y = test_y.to(config.device)
 
-            pred_y, std_y = cnp(train_X, train_y, test_X)
+            pred_y = cnp(train_X, train_y, test_X)
             y_pred.append(pred_y.cpu().numpy())
         y_pred = np.concatenate(y_pred, axis=0)
 

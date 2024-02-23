@@ -25,7 +25,7 @@ def fit_predict(train_data, test_data, config):
 
     def train_fn(ts):
         train_df = train_data.sel(time=ts).to_dataframe()
-        train_df = train_df.dropna(subset=[config.target]).reset_index()
+        train_df = train_df[train_df[f"{config.target}_missing"] == False]
 
         model = LGBMRegressor(random_state=config["random_state"], n_jobs=1, n_estimators=100)
         try:

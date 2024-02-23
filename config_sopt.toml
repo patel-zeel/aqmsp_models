@@ -1,0 +1,13 @@
+features = [
+    "lat",
+    "lon",
+    # "UWIND_MpS_LAY0",
+    # "VWIND_MpS_LAY0",
+    "TEMP_K_LAY0",
+    "pop_3km",
+    "d_motorway",
+    # "PRESS_MB_LAY0",
+]
+root_dir = "/opt/aqmsp_models"
+seed = 0
+target = "PM2.5"

@@ -1,1 +1,8 @@
 device = "cuda"
+dropout = 0.02
+random_state = 2024
+window_size = 24
+batch_size = 32
+lr = 3e-4
+epochs = 20
+context_fraction = 0.5

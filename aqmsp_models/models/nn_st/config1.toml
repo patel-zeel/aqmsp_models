@@ -1,0 +1,7 @@
+hidden_dims = [512, 512, 512, 512]
+lags = [1, 2, 3, 4, 5, 6]
+device = "cuda"
+lr = 3e-6
+epochs = 20
+batch_size = 128
+dropout = 0.00

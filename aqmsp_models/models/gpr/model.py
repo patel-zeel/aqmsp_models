@@ -31,29 +31,26 @@ def predict(test_data, train_data, config):
 
 
 def fit_predict(train_data, test_data, config):
-    train_X = train_data.isel(time=0).to_dataframe().reset_index()[config.features]
-    lat_min = train_X["lat"].min()
-    lat_max = train_X["lat"].max()
-    lon_min = train_X["lon"].min()
-    lon_max = train_X["lon"].max()
-
-    test_X = test_data.isel(time=0).to_dataframe().reset_index()[config.features]
-    test_X["lat"] = (test_X["lat"] - lat_min) / (lat_max - lat_min)
-    test_X["lon"] = (test_X["lon"] - lon_min) / (lon_max - lon_min)
-
     def train_fn(ts):
-        train_df = train_data.sel(time=ts).to_dataframe()
-        train_df["lat"] = (train_df["lat"] - lat_min) / (lat_max - lat_min)
-        train_df["lon"] = (train_df["lon"] - lon_min) / (lon_max - lon_min)
-        train_df = train_df.dropna(subset=[config.target]).reset_index()
+        train_df = train_data.sel(time=ts).to_dataframe().reset_index()
+        test_df = test_data.sel(time=ts).to_dataframe().reset_index()
+        for fet in config.features:
+            fet_max = train_df[fet].max()
+            fet_min = train_df[fet].min()
+            train_df[fet] = (train_df[fet] - fet_min) / (fet_max - fet_min)
+            test_df[fet] = (test_df[fet] - fet_min) / (fet_max - fet_min)
 
-        kernel = ConstantKernel(1.0) * Matern(length_scale=[1.1, 0.9], nu=1.5)  # + WhiteKernel(noise_level=0.1)
+        train_df = train_df[train_df[f"{config.target}_missing"] == False]
+
+        kernel = ConstantKernel(1.0) * Matern(
+            length_scale=[1.0] * len(config.features), nu=1.5
+        )  # + WhiteKernel(noise_level=0.1)
 
         model = GaussianProcessRegressor(
             kernel=kernel, alpha=0.1, random_state=0, normalize_y=True, n_restarts_optimizer=10
         )
         model.fit(train_df[config.features], train_df[config.target])
-        pred_y = model.predict(test_X)
+        pred_y = model.predict(test_df[config.features])
         return pred_y
 
     pred_y_list = Parallel(n_jobs=48)(delayed(train_fn)(ts) for ts in tqdm(train_data.time.values))

@@ -22,7 +22,7 @@ def fit_predict(train_data, test_data, config):
 
     def train_fn(ts):
         train_df = train_data.sel(time=ts).to_dataframe()
-        train_df = train_df.dropna(subset=[config.target]).reset_index()
+        train_df = train_df[train_df[f"{config.target}_missing"] == False]
         X = train_df[config.features].values
         y = train_df[config.target].values
         X_test = test_X.values
