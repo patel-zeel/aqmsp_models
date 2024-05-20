@@ -44,15 +44,15 @@ class Decoder(nn.Module):
 
         x = self.mlp(x)
 
-        # return x[:, 0:1], F.softplus(x[:, 1:2])
-        return x
+        return x[:, 0:1], torch.exp(x[:, 1:2]) + 1e-10
+        # return x
 
 
 class CNP(nn.Module):
     def __init__(self, x_dim, y_dim, hidden_dims, repr_dim, dropout):
         super().__init__()
         self.encoder = Encoder(x_dim, y_dim, hidden_dims, repr_dim, dropout)
-        self.decoder = Decoder(repr_dim, x_dim, y_dim, hidden_dims, dropout)
+        self.decoder = Decoder(repr_dim, x_dim, y_dim * 2, hidden_dims, dropout)
 
     def forward(self, x_context, y_context, x_target):
         def single_forward(x_context, y_context, x_target):
@@ -64,13 +64,13 @@ class CNP(nn.Module):
             weights = F.softmax(weights, dim=-1)  # (m, n)
             rep = weights @ z  # (m, d)
 
-            y_pred = self.decoder(rep, x_target)
-            return y_pred * std + mean
+            y_pred, y_std = self.decoder(rep, x_target)
+            return y_pred * std + mean, y_std * std
 
-        y_pred = torch.vmap(single_forward, in_dims=(0, 0, 0), out_dims=0, randomness="same")(
+        y_pred, y_std = torch.vmap(single_forward, in_dims=(0, 0, 0), out_dims=0, randomness="same")(
             x_context, y_context, x_target
         )
-        return y_pred
+        return y_pred, y_std
 
 
 def fit(train_data, config):
@@ -130,8 +130,8 @@ def fit(train_data, config):
             X_target = X_target.to(config.device)
             y_target = y_target.to(config.device)
 
-            y_pred = cnp(X_context, y_context, X_target)
-            loss = F.mse_loss(y_pred, y_target)
+            y_pred, y_std = cnp(X_context, y_context, X_target)
+            loss = -dist.Normal(y_pred, y_std).log_prob(y_target).mean()
             epoch_loss += loss.item()
 
             optimizer.zero_grad()
@@ -165,6 +165,10 @@ def predict(test_data, train_data, config):
         fet_max = meta[f"{feature}_max"]
         train_df[feature] = (train_df[feature] - fet_min) / (fet_max - fet_min)
         test_df[feature] = (test_df[feature] - fet_min) / (fet_max - fet_min)
+
+    if feature.startswith("pop_"):
+        print("reduced", feature, "by", config.dampen)
+        test_df[feature] = test_df[feature] * config.dampen
 
     class CustomDataset(Dataset):
         def __init__(self, train_df, test_df):
@@ -202,7 +206,7 @@ def predict(test_data, train_data, config):
             test_X = test_X.to(config.device)
             test_y = test_y.to(config.device)
 
-            pred_y = cnp(train_X, train_y, test_X)
+            pred_y, pred_std = cnp(train_X, train_y, test_X)
             y_pred.append(pred_y.cpu().numpy())
         y_pred = np.concatenate(y_pred, axis=0)
 

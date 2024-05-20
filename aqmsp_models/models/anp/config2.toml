@@ -7,4 +7,4 @@ context_fraction = 0.5
 lr = 3e-4
 epochs = 50
 batch_size = 32
-dampen = 1.0
+dampen = 0.9

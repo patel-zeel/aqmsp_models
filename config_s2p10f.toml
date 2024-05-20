@@ -6,6 +6,9 @@ features = [
     "TEMP_K_3d",
     "PBL_WRF_M",
     "WS_MpS_LAY0",
+    "pop_10km",
+    "fire_count",
+    "fire_brightness",
 ]
 root_dir = "/opt/aqmsp_models"
 seed = 0
